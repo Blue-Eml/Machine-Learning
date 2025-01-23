@@ -1,0 +1,400 @@
+---
+title: "Chapter 12 Homework"
+author: "Emily Blue"
+date: "`2-26-24`"
+output: openintro::lab_report
+---
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(openintro)
+library(dplyr)
+library(ISLR2)
+data("USArrests")
+data("College")
+library(pls)
+```
+
+# 6, Section 6.6
+
+
+e)
+```{r}
+set.seed(777)
+
+pcr.fit <- pcr(Apps ~ ., data = College, scale = TRUE,
+validation = "CV")
+
+summary(pcr.fit)
+
+validationplot(pcr.fit, val.type = "MSEP")
+
+## PCR on training data and evlaute test set performance
+
+x <- model.matrix(Apps ~ ., College)[, -1]
+y <- College$Apps
+
+set.seed(777)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+pcr.fit <- pcr(Apps ~ ., data = College, subset = train,
+scale = TRUE, validation = "CV")
+validationplot(pcr.fit, val.type = "MSEP")
+
+# Lowest cross validation when M = 5
+
+pcr.pred <- predict(pcr.fit, x[test, ], ncomp = 5)
+mean((pcr.pred - y.test)^2)
+
+#Test MSE is 3307343
+
+
+pcr.fit <- pcr(y ~ x, scale = TRUE, ncomp = 5)
+summary(pcr.fit)
+```
+
+f)
+
+Fit a PLS model on the training set, with M chosen by crossvalidation. Report the test error obtained, along with the value
+of M selected by cross-validation
+
+```{r}
+
+set.seed(777)
+pls.fit <- plsr(Apps ~ ., data = College, subset = train, scale
+= TRUE, validation = "CV")
+summary(pls.fit)
+
+validationplot(pls.fit, val.type = "MSEP")
+
+# lowest cross-validation error occurs when M = 2
+
+pls.pred <- predict(pls.fit, x[test, ], ncomp = 2)
+mean((pls.pred - y.test)^2)
+
+# test MSE is 2974156
+
+pcr.fit <- pcr(Apps ~ ., data = College, scale = TRUE, ncomp = 1)
+summary(pcr.fit)
+
+```
+The test MSE obtained from the PCR model has a lower test MSE than the PLS model, but they are still similar MSE's. 
+
+
+g)
+
+From the five models, the Least Squares Model has the lowest test error (error = 1503171), followed by the Lasso Model (error = 1555348), followed by the Ridge Regression Model (error = 1823376), followed by PCR (error = 2974156), then PLS (error = 3307343)
+
+Using least squares or lasso, we can predict the number of college application received more accurately. 
+ 
+
+
+# Chapter 12, Section 12.6
+
+### Exercise 8
+
+a)
+```{r code-chunk-label}
+
+states <- row.names(USArrests)
+names(USArrests)
+
+pr.out <- prcomp(USArrests, scale = TRUE)
+names(pr.out)
+
+pr.out$center
+pr.out$scale
+pr.out$rotation
+
+dim(pr.out$x)
+
+pr.out$rotation = -pr.out$rotation
+pr.out$x = -pr.out$x
+biplot(pr.out, scale = 0)
+
+pr.var <- pr.out$sdev^2
+pr.var
+
+pve <- pr.var / sum(pr.var)
+pve
+
+# First principal component explains 62.0% of variance in the data, the next principal component explains 24.7% of variance, the next explains 8.91% of variance in data, the next explains 4.33% of variance in data
+
+
+par(mfrow = c(1, 2))
+plot(pve, xlab = "Principal Component",
+ylab = "Proportion of Variance Explained", ylim = c(0, 1),
+type = "b")
+plot(cumsum(pve), xlab = "Principal Component",
+ylab = "Cumulative Proportion of Variance Explained",
+ylim = c(0, 1), type = "b")
+
+a <- c(1, 2, 8, -3)
+cumsum(a)
+
+```
+
+b) Perform equation 12.10 (p515)
+```{r}
+
+
+
+```
+
+
+
+
+
+### Exercise 9
+
+Clustering Observations using complete linkage with Euclidean distance matrix
+
+a)
+```{r}
+set.seed(50)
+
+x <- matrix(rnorm(50 * 2), ncol = 2)
+
+hc.complete <- hclust(dist(USArrests), method = "complete")
+
+par(mfrow = c(1, 3))
+plot(hc.complete, main = "Complete Linkage",
+xlab = "", sub = "", cex = .9)
+
+
+```
+
+b)
+
+```{r}
+
+cutree(hc.complete, 3)
+
+
+
+```
+
+c) Scale variables then use complete linkage and Euclidean distance
+
+```{r}
+
+scaleSD.Arrests = scale(USArrests)
+
+hc.complete.scaleSD <- hclust(dist(scaleSD.Arrests), method = "complete")
+
+plot(hc.complete.scaleSD, method = "complete")
+
+
+```
+
+
+d)
+
+```{r}
+
+cutree(hc.complete.scaleSD,3)
+
+table(cutree(hc.complete,3),cutree(hc.complete.scaleSD,3))
+
+```
+
+After scaling the variables, the clusters obtained are similar to the original cluster with a few different classifications for states. Because the units are different due to differing state sizes, population, ect, scaling should be donw to even out these differences. 
+
+
+### Exercise 12
+
+```{r}
+
+# Centering and scaling each column to have mean 0 and variance 1. 
+X <- data.matrix(scale(USArrests))
+pcob <- prcomp(X)
+summary(pcob)
+
+# singular value decomposition
+sX <- svd(X)
+names(sX)
+round(sX$v, 3)
+pcob$rotation
+
+t(sX$d * t(sX$u))
+pcob$x
+
+
+## Replace svd() with prcomp()
+nomit <- 20
+
+set.seed(50)
+ina <- sample(seq(50), nomit)
+inb <- sample(1:4, nomit, replace = TRUE)
+Xna <- X
+index.na <- cbind(ina, inb)
+Xna[index.na] <- NA
+
+
+# Step 1
+fit.prcomp <- function(X, M = 1) {
+ prob <- prcomp(X)
+ with(prob,
+u[, 1:M, drop = FALSE] %*%
+(d[1:M] * t(v[, 1:M, drop = FALSE]))
+)
+}
+
+
+fit.prcomp <- function(X, M = 1) {
+ prob <- prcomp(X)
+ with(prob,
+sX$u[, 1:M, drop = FALSE] %*%
+(sX$d[1:M] * t(sX$v[, 1:M, drop = FALSE]))
+)
+}
+
+Xhat <- Xna
+xbar <- colMeans(Xna, na.rm = TRUE)
+Xhat[index.na] <- xbar[inb]
+
+thresh <- 1e-7
+rel_err <- 1
+iter <- 0
+ismiss <- is.na(Xna)
+mssold <- mean((scale(Xna, xbar, FALSE)[!ismiss])^2)
+mss0 <- mean(Xna[!ismiss]^2)
+
+#Step 1
+ while(rel_err > thresh) {
+iter <- iter + 1
+ # Step 2(a)
+ Xapp <- fit.prcomp(Xhat, M = 1)
+ # Step 2(b)
+ Xhat[ismiss] <- Xapp[ismiss]
+ # Step 2(c)
+ mss <- mean(((Xna - Xapp)[!ismiss])^2)
+ rel_err <- (mssold - mss) / mss0
+ mssold <- mss
+ cat("Iter:", iter, "MSS:", mss,
+ "Rel. Err:", rel_err, "\n")
+ }
+
+
+# Correlation between the 20 imputed values and the actual values
+cor(Xapp[ismiss], X[ismiss])
+
+                                      
+```
+
+
+### Exercise 13
+
+a)
+```{r, echo = F}
+
+Samples <- read_csv("~/Downloads/Ch12Ex13.csv", 
+     col_names = FALSE)
+```
+
+b)
+```{r}
+
+set.seed(50)
+
+# complete
+hc.complete <- hclust(as.dist(1 - cor(Samples)), method='complete')
+
+plot(hc.complete, main = "Complete Linkage",
+xlab = "", sub = "", cex = .9)
+
+
+# average
+hc.average <- hclust(as.dist(1 - cor(Samples)), method = "average")
+
+plot(hc.average, main = "Average Linkage",
+xlab = "", sub = "", cex = .9)
+
+
+#single
+hc.single <- hclust(as.dist(1 - cor(Samples)), method = "single")
+
+plot(hc.single, main = "Single Linkage",
+xlab = "", sub = "", cex = .9)
+
+
+par(mfrow = c(1, 3))
+plot(hc.complete, main = "Complete Linkage",
+xlab = "", sub = "", cex = .9)
+plot(hc.average, main = "Average Linkage",
+xlab = "", sub = "", cex = .9)
+plot(hc.single, main = "Single Linkage",
+xlab = "", sub = "", cex = .9)
+
+```
+The choice of method affects the results and clusters obtained. It shows two clusters formed for single and complete linkage while average linkage has three clusters. 
+
+c)
+
+I would suggest using PCA to differentiate between the healthy and diseased groups
+
+
+PCA 
+```{r}
+
+Samples.labs <- Samples$labs
+Samples.data <- Samples$data
+
+
+pr.Samples <- prcomp(Samples, scale = TRUE)
+summary(pr.Samples)
+plot(pr.Samples)
+
+dim(pr.Samples$x)
+biplot(pr.Samples, scale = 0)
+
+Cols <- function(vec) {
+cols <- rainbow(length(unique(vec)))
+return(cols[as.numeric(as.factor(vec))])
+}
+
+
+par(mfrow = c(1, 2))
+plot(pr.Samples$x[, 1:2], col = Cols(Samples), pch = 19,
+xlab = "Z1", ylab = "Z2")
+plot(pr.Samples$x[, c(1, 3)], col = Cols(Samples), pch = 19,
+xlab = "Z1", ylab = "Z3")
+
+
+# PVE of each principal component and the cumulative PVE of each principal component
+pve <- 100 * pr.out$sdev^2 / sum(pr.out$sdev^2)
+par(mfrow = c(1, 2))
+plot(pve, type = "o", ylab = "PVE",
+xlab = "Principal Component", col = "blue")
+plot(cumsum(pve), type = "o", ylab = "Cumulative PVE",
+xlab = "Principal Component", col = "brown3")
+
+
+```
+
+
+K-Means Clustering
+
+```{r}
+
+set.seed(40)
+
+km.Samples <- kmeans(Samples, 2, nstart = 20)
+summary(km.Samples)
+
+
+km.Samples$cluster
+
+
+par(mfrow = c(1, 2))
+plot(x, col = (km.Samples$cluster + 1),
+main = "K-Means Clustering Results with K = 2",
+xlab = "", ylab = "", pch = 20, cex = 2)
+
+```
+
+
+...
+
