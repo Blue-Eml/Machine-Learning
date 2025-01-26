@@ -1,0 +1,374 @@
+---
+title: "Support Vector Machines"
+author: "Emily Blue"
+date: "`r Sys.Date()`"
+output: openintro::lab_report
+---
+### Overview:
+
+This R Markdown file includes my completion of **ISLR chapter 9**, exercises 7 and 8. 
+
+**Analyzing Support Vector Approaches**
+
+#### Exercises 7: Predict a Cars Gas Mileage
+- **Objective**: Use Support Vector Approaches to predict whether a given car gets high or low gas mileage. 
+- **Steps**:
+    - Create binary variable. 
+    - Fit Support Vector Classifier to the data with various values of cost. 
+    - Fit Support Vector Machines with radial and polynomial basis kernels. 
+    - Create plots to support results. 
+    
+
+#### Exercises 8: Predict Orange Juice Purchases
+- **Objective**:  Analyze and model the purchasing behavior (Purchase) using Support Vector Machines (SVM) for best performing model. 
+- **Steps**: 
+    - Create a training set and a test set. 
+    - Fit a Support Vector Classifier (SVC).  
+    - Tuning parameter for optimal cost. 
+    - Perform SVM with Radial Kernel. 
+    - Perform SVM with Polynomial Kernel. 
+    - Determining best approach for the data. 
+
+---
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(openintro)
+library(dplyr)
+library(ISLR2)
+library(e1071)
+```
+
+### Predict a Cars Gas Mileage
+
+#### a) Create a binary variable that takes on a 1 for cars with gas mileage above the median, and a 0 for cars with gas mileage below the median.
+
+```{r code-chunk-label}
+
+mpg_median <- median(Auto$mpg)
+
+Auto$aboveMedian <- ifelse(Auto$mpg > mpg_median, 1, 0)
+
+Auto$aboveMedian <- as.factor(Auto$aboveMedian)
+
+```
+
+#### b) Fit a support vector classifier to the data with various values of cost, in order to predict whether a car gets high or low gas mileage. Report the cross-validation errors associated with different values of this parameter. Comment on your results.
+
+```{r}
+
+set.seed(392)
+
+mpg.tune1 <- tune(svm, aboveMedian ~ ., data = Auto, kernel = "linear", ranges=list(cost=c(0.001, 0.01, 0.1, 1,5,10,100)), scale = FALSE)
+
+options(scipen = 999)
+
+# Cross Validation Errors for each value of cost
+summary(mpg.tune1)
+
+
+bestmod <- mpg.tune1$best.model
+bestmod
+
+# The model with the lowest cross validation error is the model using cost = 0.1
+
+```
+#### c) Now repeat (b), this time using SVMs with radial and polynomial basis kernels, with different values of gamma and degree and cost. Comment on your results.
+
+```{r}
+
+# Radial 
+
+svm.rad <- tune(svm, aboveMedian ~ ., data = Auto, kernel = "radial", ranges = list(
+cost = c(0.1, 1, 10, 100, 1000), gamma = c(0.5, 1, 2, 3, 4)))
+
+summary(svm.rad)
+
+best.rad <- svm.rad$best.model
+best.rad
+
+# The radial kernel model with the lowest cross validation error is when cost = 10 and gamma = 0.5
+
+# Polynomial
+
+svm.poly <- tune(svm, aboveMedian ~ ., data = Auto, kernel = "polynomial", ranges = list(
+cost = c(0.1, 1, 10, 100, 1000), degree = c(0.5, 1, 2, 3, 4)))
+
+summary(svm.poly)
+
+best.poly <- svm.poly$best.model
+best.poly
+
+# The polynomial kernel model with the lowest cross validation error is when cost = 1000 and degree = 1
+
+```
+
+```{r}
+
+
+l.fit <- svm(aboveMedian ~ ., data = Auto, kernel = "linear", cost = 0.1)
+r.fit <- svm(aboveMedian ~ ., data = Auto, kernel = "radial", cost = 10, gamma = 0.5)
+p.fit <- svm(aboveMedian ~ ., data = Auto, kernel = "polynomial", cost = 1000, degree = 1)
+
+plot(l.fit, Auto, mpg ~ horsepower)
+plot(r.fit, Auto, mpg ~ horsepower)
+plot(p.fit, Auto, mpg ~ horsepower)
+
+plot(l.fit, Auto, mpg ~ displacement)
+plot(r.fit, Auto, mpg ~ displacement)
+plot(p.fit, Auto, mpg ~ displacement)
+
+plot(l.fit, Auto, mpg ~ origin)
+plot(r.fit, Auto, mpg ~ origin)
+plot(p.fit, Auto, mpg ~ origin)
+
+plot(l.fit, Auto, mpg ~ year)
+plot(r.fit, Auto, mpg ~ year)
+plot(p.fit, Auto, mpg ~ year)
+
+plot(l.fit, Auto, mpg ~ cylinders)
+plot(r.fit, Auto, mpg ~ cylinders)
+plot(p.fit, Auto, mpg ~ cylinders)
+
+```
+
+
+### Predict Orange Juice Purchases
+
+#### a) Create a training set containing a random sample of 800 observations, and a test set containing the remaining observations
+
+```{r}
+
+set.seed(392)
+
+train = sample (1070,800)
+
+training = OJ[train,]
+testing = OJ[-train,]
+
+```
+
+
+
+#### b) Fit a support vector classifer to the training data using cost = 0.01, with Purchase as the response and the other variables as predictors. Use the summary() function to produce summary statistics, and describe the results obtained.
+
+
+
+```{r}
+
+?OJ
+
+oj.svm <- svm(Purchase ~., data = training, kernel = "linear", cost = 0.01, scale = FALSE)
+
+summary(oj.svm)
+
+# When using linear kernel and cost = 0.01, there were 598 support vectors, 300 in one class and 298 in the other. 
+
+```
+
+#### c) What are the training and test error rates?
+
+
+```{r}
+
+ypred <- predict(oj.svm, training)
+
+table(predict = ypred, truth = training$Purchase)
+
+train_error <- 1-(477+120)/800
+train_error
+
+# Training error is 0.25375
+
+ypred <- predict(oj.svm, testing)
+table(predict = ypred, truth = testing$Purchase)
+
+test_error <- 1-(142+38)/270
+test_error
+
+# The test error is 0.3333333
+
+```
+
+#### d) Use the tune() function to select an optimal cost. Consider values in the range 0.01 to 10.
+
+```{r}
+
+
+oj.tunel <- tune(svm, Purchase ~., data = training, kernel = "linear", ranges=list(cost=c(0.01, 0.1, 1, 5, 10)), scale = FALSE)
+
+summary(oj.tunel)
+
+best.l <- oj.tunel$best.model
+best.l
+
+
+oj.svm1 <- svm(Purchase ~., data = training, kernel = "linear", cost = 1, scale = FALSE)
+
+```
+
+#### (e) Compute the training and test error rates using this new value for cost.
+
+```{r}
+
+
+oj.svm1 <- svm(Purchase ~., data = training, kernel = "linear", cost = 1, scale = FALSE)
+
+set.seed(392)
+
+ypred <- predict(oj.svm1, training)
+
+table(predict = ypred, truth = training$Purchase)
+
+train_error <- 1-(450+224)/800
+train_error
+
+# OJ Training error for cost = 1 linear kernel is 0.1575
+
+ypred <- predict(oj.svm1, testing)
+table(predict = ypred, truth = testing$Purchase)
+
+test_error <- 1-(133+84)/270
+test_error
+
+# OJ test error for cost = 1 linear kernel is 0.1962963
+```
+
+#### (f) Repeat parts (b) through (e) using a support vector machine with a radial kernel. Use the default value for gamma.
+
+```{r}
+
+# b
+oj.Radial <- svm(Purchase ~., data = training, kernel = "radial", cost = 0.01, scale = FALSE)
+summary(oj.Radial)
+
+# When using radial kernel and cost = 0.01 and default gamma, there were 612 support vectors, 314 in one class and 298 in the other. 
+
+# c
+
+
+ypred <- predict(oj.Radial, training)
+
+table(predict = ypred, truth = training$Purchase)
+
+train_error <- 1-(502+0)/800
+train_error
+
+# Training error is 0.3725
+
+ypred <- predict(oj.Radial, testing)
+table(predict = ypred, truth = testing$Purchase)
+
+test_error <- 1-(151+0)/270
+test_error
+
+# The test error is 0.4407407
+
+
+# d
+
+oj.tune2 <- tune(svm, Purchase ~ ., data = training, kernel = "radial", ranges = list(
+cost=c(0.01, 0.1, 1, 5, 10)))
+
+summary(oj.tune2)
+
+best.r <- oj.tune2$best.model
+best.r
+
+# e
+
+oj.svm2 <- svm(Purchase ~., data = training, kernel = "radial", cost = 1, scale = FALSE)
+
+set.seed(392)
+
+ypred <- predict(oj.svm2, training)
+
+table(predict = ypred, truth = training$Purchase)
+
+train_error <- 1-(433+175)/800
+train_error
+
+# Training error is 0.24
+
+ypred <- predict(oj.svm2, testing)
+table(predict = ypred, truth = testing$Purchase)
+
+test_error <- 1-(123+62)/270
+test_error
+
+# Test error is 0.3148148
+
+```
+
+#### (g) Repeat parts (b) through (e) using a support vector machine with a polynomial kernel. Set degree = 2.
+
+```{r}
+
+# b
+oj.poly <- svm(Purchase ~ ., data = OJ, kernel = "polynomial", cost = 0.01, degree = 2)
+summary(oj.poly)
+
+# For a polynomial kernel with cost = 0.01 and degree = 2, there are 839 vectors with 422 beloning to one class and 417 belonging to the other
+
+# c
+
+ypred <- predict(oj.poly, training)
+
+set.seed(392)
+
+table(predict = ypred, truth = training$Purchase)
+
+train_error <- 1-(497 + 18)/800
+train_error
+
+# Training error is 0.35625
+
+ypred <- predict(oj.poly, testing)
+table(predict = ypred, truth = testing$Purchase)
+
+test_error <- 1-(149+11)/270
+test_error
+
+# The test error is 0.4074074
+
+
+# d 
+
+svm.poly <- tune(svm, Purchase ~ ., data = OJ, kernel = "polynomial", ranges = list(
+cost = c(0.001, 0.1, 1, 10), degree = c(0.5, 1, 2, 3, 4)))
+
+summary(svm.poly)
+
+best.poly <- svm.poly$best.model
+best.poly
+
+# e
+
+oj.svm3 <- svm(Purchase ~ ., data = OJ, kernel = "polynomial", cost = 10, degree = 1)
+summary(oj.svm3)
+
+ypred <- predict(oj.svm3, training)
+
+table(predict = ypred, truth = training$Purchase)
+
+train_error <- 1-(446+230)/800
+train_error
+
+# Training error is 0.155
+
+ypred <- predict(oj.svm3, testing)
+table(predict = ypred, truth = testing$Purchase)
+
+test_error <- 1-(132+88)/270
+test_error
+
+# Test error is 0.1851852
+
+```
+
+#### (h) Overall, which approach seems to give the best results on this data?
+
+Overall, it appears that using a polynomial kernel is the best approach. Cross validation showed that using cost = 10 and degree = 1 was the best approach for the polynomial model. This model had the overall lowest test and training error rates in comparison to linear and radial kernels. 
+
+...
+

@@ -1,0 +1,538 @@
+---
+title: "Linear Model Selection and Regularization"
+author: "Emily Blue"
+date: "`2-26-24`"
+output: openintro::lab_report
+---
+
+### Overview:
+
+This R Markdown file includes my completion of **ISLR chapter 6**, exercises 9 and 11 .
+
+#### Exercise 9: Predict College Applications
+- **Objective**: Predict number of college applications received with five regression approaches. 
+- **Steps**:
+    - Split data into training set and test set.
+    - Fit a **Linear Model** using least squares. 
+    - Perform **Best Subset Selection** and, **Forward and Backward Selection**. 
+    - Fit a **Ridge Regression** model with λ chosen by cross-validation. 
+    - Fit a **Lasso model** with λ chosen by cross validation. 
+    - Fit a **Principal Component Regression** model with M chosen by cross validation.
+    - Fit a **Partial Least Squares** model with M chosen by cross validation
+    - Comment on the five approaches. 
+
+#### Exercise 11: Predict per Capita Crime Rate
+- **Objective**: Predict per capita crime rate in the Boston data set.
+- **Steps**:
+    - Performing **Ridge Regression, Lasso, PCR, PLS,** and proposing best model. 
+
+---
+    
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(openintro)
+library(ISLR2)
+library(dplyr)
+library(glmnet)
+library(leaps)
+library(pls)
+data("College")
+```
+
+
+## Predict College Applications
+
+### a) Split the data set into a training set and a test set.
+
+```{r}
+
+x <- model.matrix(Apps ~ ., College)[, -1]
+y <- College$Apps
+
+set.seed(777)
+
+train <- sample(c(TRUE, FALSE), nrow(College),
+replace = TRUE)
+test <- (!train)
+
+# Using this 
+set.seed(777)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+```
+
+
+### b) Linear model 
+
+#### Fit a linear model using least squares on the training set and report the test error obtained. 
+
+
+```{r}
+lm.fit <- lm(Apps ~., data = College, subset = train)
+lm.pred <- predict(lm.fit, College[test,])
+lm.error <- mean((lm.pred - y.test)^2)
+lm.error
+```
+
+Test MSE is 1503171
+
+#### Best Subset Selection
+
+```{r}
+
+regfit.full <- regsubsets(Apps ~ ., data = College)
+summary(regfit.full)
+
+
+regfit.full <- regsubsets(Apps ~ ., data = College, nvmax = 17)
+reg.summary <- summary(regfit.full)
+names(reg.summary)
+
+reg.summary$rsq
+
+par(mfrow = c(2, 2))
+
+plot(reg.summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+plot(reg.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+
+which.max(reg.summary$adjr2)
+# 13
+
+plot(reg.summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+points(13, reg.summary$adjr2[13], col = "red", cex = 2, pch = 20)
+
+
+which.min(reg.summary$cp)
+#12
+
+plot(reg.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+points(12, reg.summary$cp[12], col = "red", cex = 2,pch = 20)
+
+
+which.min(reg.summary$bic)
+#10
+
+plot(reg.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+points(10, reg.summary$bic[10], col = "red", cex = 2, pch = 20)
+
+
+plot(regfit.full, scale = "r2")
+plot(regfit.full, scale = "adjr2")
+plot(regfit.full, scale = "Cp")
+plot(regfit.full, scale = "bic")
+
+coef(regfit.full, 3)
+```
+
+####  Forward and Backward Selection
+
+```{r}
+
+regfit.fwd <- regsubsets(Apps ~ ., data = College, nvmax = 17, method = "forward")
+summary(regfit.fwd)
+
+regfit.bwd <- regsubsets(Apps ~ ., data = College, nvmax = 17, method = "backward")
+summary(regfit.bwd)
+
+```
+
+
+When using either forward or backward stepwise selection, the best one-variable model contains only Accept, and the best two variable model would also include Top10perc.
+
+
+#### Choosing Among Models
+
+```{r}
+
+set.seed(777)
+
+train <- sample(c(TRUE, FALSE), nrow(Hitters),replace = TRUE)
+test <- (!train)
+
+regfit.best <- regsubsets(Apps ~ ., data = College[train, ], nvmax = 17)
+test.mat <- model.matrix(Apps ~ ., data = College[test, ])
+
+val.errors <- rep(NA, 17)
+for(i in 1:17){
+   coefi=coef(regfit.best,id=i)
+   pred=test.mat[,names(coefi)]%*%coefi
+   val.errors[i]=mean((College$Apps[test]-pred)^2)
+}
+
+val.errors
+
+which.min(val.errors)
+#11
+
+coef(regfit.best, 11)
+
+
+predict.regsubsets <- function(object, newdata , id, ...) {
+form <- as.formula(object$call[[2]])
+mat <- model.matrix(form, newdata)
+coefi <- coef(object, id = id)
+xvars <- names(coefi)
+mat[, xvars] %*% coefi
+}
+
+
+regfit.best <- regsubsets(Apps ~ ., data = College, nvmax = 17)
+coef(regfit.best, 11)
+
+```
+
+#### Using Cross Validation
+
+```{r}
+
+k <- 10
+n <- nrow(College)
+set.seed(777)
+
+folds <- sample(rep(1:k, length = n))
+cv.errors <- matrix(NA, k, 17, dimnames = list(NULL, paste(1:17)))
+
+for (j in 1:k) {
+best.fit <- regsubsets(Apps ~ ., data = College[folds != j, ],
+nvmax = 17)
+for (i in 1:17) {
+pred <- predict(best.fit, College[folds == j, ], id = i)
+cv.errors[j, i] <-
+mean((College$Apps[folds == j] - pred)^2)
+}
+}
+
+mean.cv.errors <- apply(cv.errors, 2, mean)
+mean.cv.errors
+
+par(mfrow = c(1, 1))
+plot(mean.cv.errors, type = "b")
+# 10 Variable model
+
+reg.best <- regsubsets(Apps ~ ., data = College,nvmax = 17)
+coef(reg.best, 10)
+
+```
+
+
+
+### c) Ridge Regression
+
+#### Fit a ridge regression model on the training set, with λ chosen by cross-validation. Report the test error obtained.
+
+```{r}
+
+x <- model.matrix(Apps ~ ., College)[, -1]
+y <- College$Apps
+
+set.seed(777)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+grid <- 10^seq(10, -2, length = 100)
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = grid)
+
+dim(coef(ridge.mod))
+
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 0)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+bestlam
+
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test, ])
+mean((ridge.pred - y.test)^2)
+
+options(scipen=999)
+out <- glmnet(x, y, alpha = 0)
+predict(out, type = "coefficients", s = bestlam)[1:18, ]
+```
+
+
+Value of λ that results in the smallest cross validation error is 341.6
+
+Test MSE of this is 1823376
+
+
+### d) Lasso Model 
+
+```{r}
+
+set.seed(777)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+lasso.mod <- glmnet(x[train, ], y[train], alpha = 1, lambda = grid)
+plot(lasso.mod)
+
+set.seed(777)
+
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 1)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+lasso.pred <- predict(lasso.mod, s = bestlam,
+newx = x[test, ])
+
+mean((lasso.pred - y.test)^2)
+
+
+out <- glmnet(x, y, alpha = 1, lambda = grid)
+lasso.coef <- predict(out, type = "coefficients", s = bestlam)[1:18, ]
+lasso.coef
+```
+
+MSE is 1555348. This is a slightly lower but similar test score to the test MSE of the ridge regression model with λ chosen by cross validation. 
+
+However, with the lasso model we see that 1 of the 17 coefficient estimates are exactly zero. So, the lasso model with λ chosen by cross-validation contains only sixteen variables. 
+
+
+
+### e) PCR model
+
+#### Fit a PCR model on the training set, with M chosen by crossvalidation. Report the test error obtained, along with the value of M selected by cross-validation. 
+
+```{r}
+set.seed(777)
+
+pcr.fit <- pcr(Apps ~ ., data = College, scale = TRUE,
+validation = "CV")
+
+summary(pcr.fit)
+
+validationplot(pcr.fit, val.type = "MSEP")
+
+## PCR on training data and evlaute test set performance
+
+x <- model.matrix(Apps ~ ., College)[, -1]
+y <- College$Apps
+
+set.seed(777)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+pcr.fit <- pcr(Apps ~ ., data = College, subset = train,
+scale = TRUE, validation = "CV")
+validationplot(pcr.fit, val.type = "MSEP")
+
+# Lowest cross validation when M = 5
+
+pcr.pred <- predict(pcr.fit, x[test, ], ncomp = 5)
+mean((pcr.pred - y.test)^2)
+
+#Test MSE is 3307343
+
+
+pcr.fit <- pcr(y ~ x, scale = TRUE, ncomp = 5)
+summary(pcr.fit)
+```
+
+### f) PLS model
+#### Fit a PLS model on the training set, with M chosen by crossvalidation. Report the test error obtained, along with the value of M selected by cross-validation
+
+```{r}
+
+set.seed(777)
+pls.fit <- plsr(Apps ~ ., data = College, subset = train, scale
+= TRUE, validation = "CV")
+summary(pls.fit)
+
+validationplot(pls.fit, val.type = "MSEP")
+
+# lowest cross-validation error occurs when M = 2
+
+pls.pred <- predict(pls.fit, x[test, ], ncomp = 2)
+mean((pls.pred - y.test)^2)
+
+# test MSE is 2974156
+
+pcr.fit <- pcr(Apps ~ ., data = College, scale = TRUE, ncomp = 1)
+summary(pcr.fit)
+
+```
+
+The test MSE obtained from the PCR model has a lower test MSE than the PLS model, but they are still similar MSE's. 
+
+
+
+
+#### Comment on the results obtained. How accurately can we predict the number of college applications received? Is there much diference among the test errors resulting from these fve approaches?
+
+From the five models, the Least Squares Model has the lowest test error (error = 1503171), followed by the Lasso Model (error = 1555348), followed by the Ridge Regression Model (error = 1823376), followed by PCR (error = 2974156), then PLS (error = 3307343)
+
+Using least squares or lasso, we can predict the number of college application received more accurately. 
+ 
+
+## Predict per Capita Crime Rate
+
+Try out some of the regression methods explored in this chapter, such as best subset selection, the lasso, ridge regression, and
+PCR. Present and discuss results for the approaches that you consider. 
+
+### a) Regression Methods
+
+#### Try out some of the regression methods explored in this chapter, such as best subset selection, the lasso, ridge regression, and PCR. Present and discuss results for the approaches that you consider. 
+
+```{r}
+
+data("Boston")
+?Boston
+
+# Ridge Regression
+
+x <- model.matrix(crim ~ ., data = Boston)[, -1]
+y <- Boston$crim
+
+set.seed(506)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+grid <- 10^seq(10, -2, length = 100)
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = grid)
+
+dim(coef(ridge.mod))
+
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 0)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+bestlam
+
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test, ])
+mean((ridge.pred - y.test)^2)
+
+options(scipen=999)
+out <- glmnet(x, y, alpha = 0)
+predict(out, type = "coefficients", s = bestlam)[1:13, ]
+
+
+# Lasso
+
+set.seed(506)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+lasso.mod <- glmnet(x[train, ], y[train], alpha = 1, lambda = grid)
+plot(lasso.mod)
+
+set.seed(506)
+
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 1)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+lasso.pred <- predict(lasso.mod, s = bestlam,newx = x[test, ])
+
+mean((lasso.pred - y.test)^2)
+
+out <- glmnet(x, y, alpha = 1, lambda = grid)
+lasso.coef <- predict(out, type = "coefficients", s = bestlam)[1:13, ]
+lasso.coef
+
+
+# Principal Component Regression (PCR)
+
+set.seed(506)
+
+pcr.fit <- pcr(crim ~ ., data = Boston, scale = TRUE, validation = "CV")
+summary(pcr.fit)
+validationplot(pcr.fit, val.type = "MSEP")
+# Smallest cross validation error when M = 12
+
+
+set.seed(506)
+pcr.fit <- pcr(crim ~ ., data = Boston, subset = train, scale = TRUE, validation = "CV")
+validationplot(pcr.fit, val.type = "MSEP")
+
+pcr.pred <- predict(pcr.fit, x[test, ], ncomp = 8)
+mean((pcr.pred - y.test)^2)
+
+pcr.fit <- pcr(y ~ x, scale = TRUE, ncomp = 8)
+summary(pcr.fit)
+
+# Partial Least Squares (PLS)
+
+set.seed(506)
+
+pls.fit <- plsr(crim ~ ., data = Boston, subset = train, scale = TRUE, validation = "CV")
+summary(pls.fit)
+
+validationplot(pls.fit, val.type = "MSEP")
+# Use M = 2
+
+pls.pred <- predict(pls.fit, x[test, ], ncomp = 2)
+mean((pls.pred - y.test)^2)
+
+pls.fit <- plsr(crim ~ ., data = Boston, scale = TRUE, ncomp = 2)
+summary(pls.fit)
+
+```
+
+Ridge Regression: 
+Value of λ that results in the smallest cross validation error is 0.6390874
+Test MSE is 14.47811
+
+Lasso:
+MSE is 19.41168. Results in two variables with coefficients of exactly 0 (age and tax)
+
+PCR:
+MSE is 19.71289. 
+
+Partial Least Squares:
+MSE is 20.20811. 
+
+The model with the lowest MSE is Ridge Regression, so I will be using this for the Boston crime model. 
+
+
+### b) Propose a model that seem to perform well on this data set, and justify your answer.
+
+```{r}
+# Lasso Test MSE 
+
+x <- model.matrix(crim ~ ., data = Boston)[, -1]
+y <- Boston$crim
+
+grid <- 10^seq(10, -2, length = 100)
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = grid)
+
+rr_fit <- glmnet(x[train, ], y[train], alpha = 0, lambda = grid)
+predict(ridge.mod, s = 0.6390874, type = "coefficients")[1:13, ]
+
+set.seed(506)
+train <- sample(1:nrow(x), nrow(x) / 2)
+test <- (-train)
+y.test <- y[test]
+
+ridge.mod <- glmnet(x[train, ], y[train], alpha = 0, lambda = grid, thresh = 1e-12)
+ridge.pred <- predict(ridge.mod, s = 4, newx = x[test, ])
+mean((ridge.pred - y.test)^2)
+
+set.seed(506)
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 0)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+bestlam
+
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test, ])
+mean((ridge.pred - y.test)^2)
+
+out <- glmnet(x, y, alpha = 0)
+predict(out, type = "coefficients", s = bestlam)[1:13, ]
+
+```
+
+
+#### Does your chosen model involve all of the features in the data set? Why or why not?
+
+Using cross validation, test MSE is 18.54927. This is an improvement to the Test MSE seen in other models. 
+
+Because this is a ridge regression model, which does not perform variable selection, all the variables are included in the model. 
+
+Crime = 0.0325299452zn + -0.0759638545indus, -0.8313331628chas + -4.3349909600nox +  0.4970924564rm + 0.0004045942age + -0.6864535596 dis + 0.4269807535rad + 0.0043082105tax + -0.1477203724ptratio + 0.1564277633lstat + -0.1517955472medv
+
+...
+
+
